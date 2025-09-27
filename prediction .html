@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<title>Big / Small Prediction (Volume Control)</title>
+<style>
+body {
+  background: #000;
+  color: #fff;
+  font-family: Arial, sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 20px;
+  margin: 0;
+}
+.card {
+  background: #111;
+  padding: 20px 30px;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(0,255,100,0.3);
+  width: 500px;
+}
+h1 { color: #00ff99; margin-bottom: 10px; }
+.period { font-size: 20px; margin: 10px 0; }
+.result { font-size: 40px; font-weight: bold; margin: 15px 0; transition: 0.3s all; }
+.big { color: #ffd166; text-shadow: 0 0 8px #ffd166; }
+.small { color: #7fe3ff; text-shadow: 0 0 8px #7fe3ff; }
+.timer { font-size: 14px; color: #aaa; margin-top: 10px; }
+input[type=number] { padding: 8px; border-radius: 6px; border: none; text-align: center; font-size: 16px; width: 150px; margin-right: 8px; }
+button { padding: 8px 14px; border-radius: 6px; border: none; background: #00ff99; color: #000; font-weight: bold; cursor: pointer; margin: 5px; transition: 0.2s all; }
+button:hover { background: #00cc77; }
+.controls { margin: 15px 0; }
+.history { margin-top: 20px; text-align: left; font-size: 14px; background: #1a1a1a; padding: 10px; border-radius: 8px; max-height: 220px; overflow-y: auto; scroll-behavior: smooth; }
+.history h2 { margin: 0 0 8px 0; font-size: 16px; color: #00ff99; }
+.history ul { list-style: none; padding: 0; margin: 0; }
+.history li { padding: 6px 4px; border-bottom: 1px solid #333; transition: all 0.3s ease; display: flex; align-items: center; gap: 6px; }
+.history li:hover { background: rgba(255,255,255,0.05); box-shadow: 0 0 8px rgba(0,255,150,0.4); transform: scale(1.02); }
+.history .big { color: #ffd166; font-weight: bold; text-shadow: 0 0 6px #ffd166; }
+.history .small { color: #7fe3ff; font-weight: bold; text-shadow: 0 0 6px #7fe3ff; }
+.icon { font-size: 16px; }
+.chart { margin-top: 20px; background: #1a1a1a; border-radius: 8px; padding: 10px; display: flex; justify-content: space-between; height: 120px; align-items: flex-end; position: relative; overflow: hidden; }
+.bar { width: 30px; border-radius: 4px; position: relative; display: flex; align-items: flex-end; justify-content: center; transition: height 0.8s; }
+.bar-gradient { width: 100%; border-radius: 4px; transition: height 0.8s; }
+.ratio-label { position: absolute; top: -20px; font-size: 12px; color: #fff; width: 100%; text-align: center; }
+.volume-control { margin-top: 10px; display: flex; justify-content: center; align-items: center; gap: 10px; }
+</style>
+</head>
+<body>
+<div class="card">
+<h1>Big / Small Prediction</h1>
+
+<div class="controls">
+<input type="number" id="periodInput" placeholder="Enter Period No." />
+<button onclick="setPeriod()">Set</button>
+<button onclick="toggleAuto()" id="toggleBtn">Stop</button>
+</div>
+
+<div class="period">Period No: <span id="period">25092730</span></div>
+<div class="result" id="prediction">--</div>
+<div class="timer" id="timer">Next change in 30s</div>
+
+<div class="history">
+<h2>Last 10 Results</h2>
+<ul id="historyList"></ul>
+</div>
+
+<div class="history">
+<h2>Trend Chart (Last 10 + Ratio)</h2>
+<div class="chart" id="trendChart"></div>
+</div>
+
+<div class="volume-control">
+<label for="volumeSlider">Volume:</label>
+<input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.5">
+<button onclick="toggleMute()" id="muteBtn">Mute</button>
+</div>
+
+<audio id="soundBig" src="https://www.soundjay.com/button/beep-07.wav" preload="auto"></audio>
+<audio id="soundSmall" src="https://www.soundjay.com/button/beep-10.wav" preload="auto"></audio>
+
+</div>
+
+<script>
+let periodNo = 25092730;
+let stepCount = 0;
+const periodEl = document.getElementById("period");
+const predictionEl = document.getElementById("prediction");
+const timerEl = document.getElementById("timer");
+const periodInput = document.getElementById("periodInput");
+const toggleBtn = document.getElementById("toggleBtn");
+const historyList = document.getElementById("historyList");
+const trendChart = document.getElementById("trendChart");
+const soundBig = document.getElementById("soundBig");
+const soundSmall = document.getElementById("soundSmall");
+const volumeSlider = document.getElementById("volumeSlider");
+const muteBtn = document.getElementById("muteBtn");
+
+const INTERVAL = 30;
+let remaining = INTERVAL;
+let running = true;
+const history = [];
+let muted = false;
+
+volumeSlider.addEventListener("input", ()=>{
+  soundBig.volume = volumeSlider.value;
+  soundSmall.volume = volumeSlider.value;
+});
+
+function toggleMute(){
+  muted = !muted;
+  muteBtn.textContent = muted?"Unmute":"Mute";
+  soundBig.muted = muted;
+  soundSmall.muted = muted;
+}
+
+function getPrediction(period, step){
+  let lastDigit = period % 10;
+  let number = period % 100;
+  let label = (lastDigit <=4)?"Small":"Big";
+  if(step%5===0){ label = (label==="Big")?"Small":"Big"; }
+  return {label, number};
+}
+
+function playSound(label){
+  if(muted) return;
+  if(label==="Big"){ soundBig.currentTime=0; soundBig.play(); }
+  else{ soundSmall.currentTime=0; soundSmall.play(); }
+}
+
+function addToHistory(period, pred){
+  history.unshift(pred.label);
+  if(history.length>10) history.pop();
+
+  const li = document.createElement("li");
+  const icon = pred.label==="Big"?"⬆️":"⬇️";
+  li.innerHTML=`<span class="icon">${icon}</span> 
+  <span>[${period}]</span> 
+  <span class="${pred.label.toLowerCase()}">${pred.label}</span> 
+  (${pred.number})`;
+  historyList.prepend(li);
+  while(historyList.children.length>10) historyList.removeChild(historyList.lastChild);
+
+  updateChart();
+  playSound(pred.label);
+}
+
+function updateChart(){
+  trendChart.innerHTML="";
+  const bigCount = history.filter(l=>l==="Big").length;
+  const smallCount = history.filter(l=>l==="Small").length;
+  const bigPercent = Math.round(bigCount/history.length*100);
+  const smallPercent = Math.round(smallCount/history.length*100);
+
+  history.forEach((label,index)=>{
+    const barContainer = document.createElement("div");
+    barContainer.classList.add("bar");
+
+    const bar = document.createElement("div");
+    bar.classList.add("bar-gradient");
+
+    const minHeight = label==="Big"?50:20;
+    const maxHeight = label==="Big"?100:70;
+    bar.style.height = minHeight+"px";
+    bar.style.background = label==="Big"?
+      "linear-gradient(to top,#fff176,#ffd166)":
+      "linear-gradient(to top,#7fe3ff,#0ab9ff)";
+    barContainer.appendChild(bar);
+    trendChart.appendChild(barContainer);
+
+    setTimeout(()=>{
+      const finalHeight = minHeight + Math.random()*(maxHeight-minHeight);
+      bar.style.height = finalHeight+"px";
+    },50);
+
+    if(index===0){
+      const ratio = document.createElement("div");
+      ratio.className="ratio-label";
+      ratio.textContent=`Big: ${bigPercent}% | Small: ${smallPercent}%`;
+      barContainer.appendChild(ratio);
+    }
+  });
+}
+
+function updatePrediction(){
+  stepCount++;
+  const pred = getPrediction(periodNo, stepCount);
+  const icon = pred.label==="Big"?"⬆️":"⬇️";
+  predictionEl.textContent=icon+" "+pred.label+" ("+pred.number+")";
+  predictionEl.className="result "+pred.label.toLowerCase();
+  periodEl.textContent=periodNo;
+  addToHistory(periodNo,pred);
+}
+
+function tick(){
+  if(running){
+    remaining--;
+    if(remaining<=0){
+      periodNo++;
+      updatePrediction();
+      remaining=INTERVAL;
+    }
+    timerEl.textContent="Next change in "+remaining+"s";
+  }else{
+    timerEl.textContent="Paused";
+  }
+}
+
+function setPeriod(){
+  const val=parseInt(periodInput.value);
+  if(!isNaN(val)){
+    periodNo=val;
+    stepCount=0;
+    historyList.innerHTML="";
+    trendChart.innerHTML="";
+    history.length=0;
+    updatePrediction();
+    remaining=INTERVAL;
+  }
+}
+
+function toggleAuto(){
+  running=!running;
+  toggleBtn.textContent = running?"Stop":"Start";
+  if(running) remaining=INTERVAL;
+}
+
+updatePrediction();
+setInterval(tick,1000);
+</script>
+</body>
+</html>
